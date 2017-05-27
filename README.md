@@ -3,7 +3,8 @@
 an attempt to raytrace in real-time.
 
 roadmap:
-[ ] make roadmap
+
+- [ ] make roadmap
 
 this is a term project for [this course][795].
 
