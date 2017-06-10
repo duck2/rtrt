@@ -1,20 +1,26 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #include <CL/opencl.h>
 
-#define SIZE 512
-#define SCRW 800
-#define SCRH 600
+#define SCRW 640
+#define SCRH 480
 
 GLFWwindow *win = NULL;
 GLuint fbtex = 0;
+GLuint glprog = 0;
+GLuint fbtexloc;
+GLuint quadvbo;
+unsigned char fb[SCRW*SCRH*4];
 
 /* just enough to render a texture on screen quad */
-const char *vshader = ""
+const char *vshadersrc = ""
 "#version 130"
 "precision mediump float;"
 "const madd = vec2(0.5, 0.5);"
@@ -25,22 +31,31 @@ const char *vshader = ""
 "	gl_Position = vec4(texcoords.xy, 0.0, 1.0);"
 "}";
 
-const char *fshader = ""
+const char *fshadersrc = ""
 "#version 130"
 "precision mediump float;"
 "uniform sampler2D fbtex;"
-"in vec2 texcoord;
+"in vec2 texcoord;"
 "out vec4 color;"
 "void main(){"
-"	color = texture2D(fbtex, texcoord);
+"	color = texture(fbtex, texcoord);"
 "}";
+
+GLfloat quad[] = {
+	-1.0f, -1.0f, 0.0f,
+	1.0f, -1.0f, 0.0f,
+	-1.0f, 1.0f, 0.0f,
+	-1.0f, 1.0f, 0.0f,
+	1.0f, -1.0f, 0.0f,
+	0.5f, 1.0f, 0.0f,
+};
 
 cl_context ctx = 0;
 cl_device_id dev = 0;
 cl_command_queue cqueue = 0;
-cl_program prog = 0;
+cl_program clprog = 0;
 cl_kernel kernel = 0;
-cl_mem objs[3] = {0, 0, 0};
+cl_mem clfb = 0;
 
 /* cleanup */
 void
@@ -52,11 +67,10 @@ nukegl(){
 
 void
 nukecl(){
-	int i;
-	for(i=0; i<3; i++) if(objs[i]) clReleaseMemObject(objs[i]);
+	if(clfb) clReleaseMemObject(clfb);
 	if(cqueue) clReleaseCommandQueue(cqueue);
 	if(kernel) clReleaseKernel(kernel);
-	if(prog) clReleaseProgram(prog);
+	if(clprog) clReleaseProgram(clprog);
 	if(ctx) clReleaseContext(ctx);
 }
 
@@ -72,12 +86,35 @@ die(char * f, ...){
 	exit(1);
 }
 
+GLuint
+mkglprog(){
+	GLuint out;
+	GLuint vshader = glCreateShader(GL_VERTEX_SHADER);
+	GLuint fshader = glCreateShader(GL_FRAGMENT_SHADER);
+
+	glShaderSource(vshader, 1, &vshadersrc, NULL);
+	glCompileShader(vshader);
+	glShaderSource(fshader, 1, &fshadersrc, NULL);
+	glCompileShader(fshader);
+
+	out = glCreateProgram();
+	glAttachShader(out, vshader);
+	glAttachShader(out, fshader);
+	glLinkProgram(out);
+
+	glDetachShader(out, vshader);
+	glDetachShader(out, fshader);
+	glDeleteShader(vshader);
+	glDeleteShader(fshader);
+	return out;
+}
+
 void
 errgl(int err, const char *desc){
 	die("glfw error: %s\n", desc);
 }
 
-/* set up window, gl context, out texture, screen quad and passthrough shaders */
+/* set up window, gl context, out texture, screen quad and shaders */
 void
 initgl(){
 	if(!glfwInit()) die("couldn't init glfw\n");
@@ -87,20 +124,34 @@ initgl(){
 
 	glfwSetWindowSizeLimits(win, SCRW, SCRH, SCRW, SCRH);
 	glfwMakeContextCurrent(win);
-	glViewport(0, 0, SCRW, SCRH);
+	glfwSwapInterval(1);
+
+	if(glewInit() != GLEW_OK) die("couldn't init glew\n");
+
+	glClearColor(0.0f, 0.0f, 0.4f, 0.0f);
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	glGenBuffers(1, &quadvbo);
+	glBindBuffer(GL_ARRAY_BUFFER, quadvbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_DYNAMIC_DRAW);
 
 	GLuint fbtex;
 	glGenTextures(1, &fbtex);
 	glBindTexture(GL_TEXTURE_2D, fbtex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCRW, SCRH, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCRW, SCRH, 0, GL_RGBA, GL_UNSIGNED_BYTE, fb);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	if(glGetError()) die("could not make empty texture\n");
+
+	glprog = mkglprog();
+	fbtexloc = glGetUniformLocation(glprog, "fbtex");
 }
 
 /* compile .cl file into program */
 cl_program
-mkprog(char *fname){
+mkclprog(char *fname){
 	cl_int err;
 	cl_program out;
 
@@ -136,8 +187,7 @@ initcl(){
 	err = clGetPlatformIDs(1, &platform, NULL);
 	if(err != CL_SUCCESS) die("no opencl platforms\n");
 
-	cl_context_properties props[] = {CL_GL_CONTEXT_KHR, (cl_context_properties)glfwGetCurrentContext(),
-								CL_CONTEXT_PLATFORM, (cl_context_properties)platform, 0};
+	cl_context_properties props[] = {CL_CONTEXT_PLATFORM, (cl_context_properties)platform, 0};
 	ctx = clCreateContextFromType(props, CL_DEVICE_TYPE_GPU, NULL, NULL, &err);
 	if(err != CL_SUCCESS) die("no gpu context\n");
 
@@ -154,14 +204,41 @@ initcl(){
 	if(!cqueue) die("couldn't make command queue\n");
 	dev = devs[0];
 
-	prog = mkprog("hello.cl");
-	kernel = clCreateKernel(prog, "hello", NULL);
+	char ext[1024];
+	clGetDeviceInfo(devs[0], CL_DEVICE_EXTENSIONS, 1024, ext, NULL);
+	printf("extensions: %s\n", ext);
+
+	clprog = mkclprog("hello.cl");
+	kernel = clCreateKernel(clprog, "red", NULL);
 	if(!kernel) die("couldn't make kernel\n");
 }
 
 void
 step(){
-	usleep(2000); /* limits to ~500 fps */
+	usleep(2000); /* limits to ~500 fps without vsync */
+
+	clSetKernelArg(kernel, 0, sizeof(cl_mem), &clfb);
+	size_t gsize[1] = {SCRW*SCRH}, lsize[1] = {1};
+	clEnqueueNDRangeKernel(cqueue, kernel, 1, NULL, gsize, lsize, 0, NULL, NULL);
+
+	const size_t origin[3] = {0, 0, 0};
+	const size_t region[3] = {SCRW, SCRH, 1};
+	clEnqueueReadImage(cqueue, clfb, CL_TRUE, origin, region, 0, 0, fb, 0, NULL, NULL);
+
+	glViewport(0, 0, SCRW, SCRH);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glUseProgram(glprog);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, fbtex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCRW, SCRH, 0, GL_RGBA, GL_UNSIGNED_BYTE, fb);
+	glUniform1i(fbtexloc, 0);
+
+	glEnableVertexAttribArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, quadvbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glDisableVertexAttribArray(0);
+
 	glfwSwapBuffers(win);
 	glfwPollEvents();
 }
@@ -170,24 +247,10 @@ int
 main(){
 	initgl();
 	initcl();
-	float a[SIZE], b[SIZE], out[SIZE];
-	int i;
-	for(i=0; i<SIZE; i++){
-		a[i] = i;
-		b[i] = i*2;
-	}
-	objs[0] = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float) * SIZE, a, NULL);
-	objs[1] = clCreateBuffer(ctx, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(float) * SIZE, b, NULL);
-	objs[2] = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(float) * SIZE, NULL, NULL);
-	if(!objs[0] || !objs[1] || !objs[2]) die("couldn't make memory objects\n");
 
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &objs[0]);
-	clSetKernelArg(kernel, 1, sizeof(cl_mem), &objs[1]);
-	clSetKernelArg(kernel, 2, sizeof(cl_mem), &objs[2]);
-
-	size_t gsize[1] = {SIZE}, lsize[1] = {1};
-	clEnqueueNDRangeKernel(cqueue, kernel, 1, NULL, gsize, lsize, 0, NULL, NULL);
-	clEnqueueReadBuffer(cqueue, objs[2], CL_TRUE, 0, sizeof(float) * SIZE, out, 0, NULL, NULL);
+	const cl_image_format fmt = {CL_RGBA, CL_UNSIGNED_INT8};
+	clfb = clCreateImage2D(ctx, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, fb, NULL);
+	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
 	char title[32];
 	while(!glfwWindowShouldClose(win)){
