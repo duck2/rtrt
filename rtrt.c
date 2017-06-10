@@ -20,26 +20,21 @@ GLuint quadvbo;
 unsigned char fb[SCRW*SCRH*4];
 
 /* just enough to render a texture on screen quad */
-const char *vshadersrc = ""
-"#version 130"
-"precision mediump float;"
-"const madd = vec2(0.5, 0.5);"
-"in vec2 texcoords;"
-"out vec2 texcoord;"
-"void main(){"
-"	texcoord = texcoords.xy * madd + madd;"
-"	gl_Position = vec4(texcoords.xy, 0.0, 1.0);"
-"}";
+const char *vshadersrc = "#version 130\n"
+"in vec3 modelspace;\n"
+"out vec2 UV;\n"
+"void main(){\n"
+"	gl_Position =  vec4(modelspace,1);\n"
+"	UV = (modelspace.xy+vec2(1,1))/2.0;\n"
+"}\n";
 
-const char *fshadersrc = ""
-"#version 130"
-"precision mediump float;"
-"uniform sampler2D fbtex;"
-"in vec2 texcoord;"
-"out vec4 color;"
-"void main(){"
-"	color = texture(fbtex, texcoord);"
-"}";
+const char *fshadersrc = "#version 130\n"
+"uniform sampler2D fbtex;\n"
+"in vec2 UV;\n"
+"out vec4 color;\n"
+"void main(){\n"
+"	color = texture(fbtex, UV);\n"
+"}\n";
 
 GLfloat quad[] = {
 	-1.0f, -1.0f, 0.0f,
@@ -47,7 +42,7 @@ GLfloat quad[] = {
 	-1.0f, 1.0f, 0.0f,
 	-1.0f, 1.0f, 0.0f,
 	1.0f, -1.0f, 0.0f,
-	0.5f, 1.0f, 0.0f,
+	1.0f, 1.0f, 0.0f,
 };
 
 cl_context ctx = 0;
@@ -89,13 +84,26 @@ die(char * f, ...){
 GLuint
 mkglprog(){
 	GLuint out;
+	char log[16384];
+	int nlog = 0;
 	GLuint vshader = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fshader = glCreateShader(GL_FRAGMENT_SHADER);
 
 	glShaderSource(vshader, 1, &vshadersrc, NULL);
 	glCompileShader(vshader);
+	glGetShaderiv(vshader, GL_INFO_LOG_LENGTH, &nlog);
+	if(nlog){
+		glGetShaderInfoLog(vshader, nlog, NULL, log);
+		die("couldn't compile vertex shader:\n%s\n", log);
+	}
+
 	glShaderSource(fshader, 1, &fshadersrc, NULL);
 	glCompileShader(fshader);
+	glGetShaderiv(fshader, GL_INFO_LOG_LENGTH, &nlog);
+	if(nlog){
+		glGetShaderInfoLog(fshader, nlog, NULL, log);
+		die("couldn't compile fragment shader:\n%s\n", log);
+	}
 
 	out = glCreateProgram();
 	glAttachShader(out, vshader);
@@ -218,8 +226,8 @@ step(){
 	usleep(2000); /* limits to ~500 fps without vsync */
 
 	clSetKernelArg(kernel, 0, sizeof(cl_mem), &clfb);
-	size_t gsize[1] = {SCRW*SCRH}, lsize[1] = {1};
-	clEnqueueNDRangeKernel(cqueue, kernel, 1, NULL, gsize, lsize, 0, NULL, NULL);
+	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
+	clEnqueueNDRangeKernel(cqueue, kernel, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
 	const size_t origin[3] = {0, 0, 0};
 	const size_t region[3] = {SCRW, SCRH, 1};
@@ -231,6 +239,8 @@ step(){
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, fbtex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCRW, SCRH, 0, GL_RGBA, GL_UNSIGNED_BYTE, fb);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glUniform1i(fbtexloc, 0);
 
 	glEnableVertexAttribArray(0);
@@ -249,7 +259,7 @@ main(){
 	initcl();
 
 	const cl_image_format fmt = {CL_RGBA, CL_UNSIGNED_INT8};
-	clfb = clCreateImage2D(ctx, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, fb, NULL);
+	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
 	char title[32];
