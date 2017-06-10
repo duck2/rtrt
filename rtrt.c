@@ -12,6 +12,18 @@
 #define SCRW 640
 #define SCRH 480
 
+typedef struct {
+	float o[4];
+	float d[4];
+	float color[4];
+} __attribute__((__aligned__(16))) Ray;
+
+float o[4] = {0, 0, 0, 1};
+float up[4] = {0, 1, 0, 0};
+float gaze[4] = {0, 0, -1, 0};
+float right[4] = {1, 0, 0, 0};
+float d = 1;
+
 GLFWwindow *win = NULL;
 GLuint fbtex = 0;
 GLuint glprog = 0;
@@ -50,7 +62,9 @@ cl_device_id dev = 0;
 cl_command_queue cqueue = 0;
 cl_program clprog = 0;
 cl_kernel kernel = 0;
+cl_kernel clgenrays = 0;
 cl_mem clfb = 0;
+cl_mem raybuf = 0;
 
 /* cleanup */
 void
@@ -63,6 +77,7 @@ nukegl(){
 void
 nukecl(){
 	if(clfb) clReleaseMemObject(clfb);
+	if(raybuf) clReleaseMemObject(raybuf);
 	if(cqueue) clReleaseCommandQueue(cqueue);
 	if(kernel) clReleaseKernel(kernel);
 	if(clprog) clReleaseProgram(clprog);
@@ -216,17 +231,29 @@ initcl(){
 	clGetDeviceInfo(devs[0], CL_DEVICE_EXTENSIONS, 1024, ext, NULL);
 	printf("extensions: %s\n", ext);
 
-	clprog = mkclprog("hello.cl");
+	clprog = mkclprog("rtrt.cl");
 	kernel = clCreateKernel(clprog, "red", NULL);
 	if(!kernel) die("couldn't make kernel\n");
+	clgenrays = clCreateKernel(clprog, "genrays", NULL);
+	if(!clgenrays) die("couldn't make genrays kernel\n");
 }
 
 void
 step(){
 	usleep(2000); /* limits to ~500 fps without vsync */
 
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &clfb);
 	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
+
+	clSetKernelArg(clgenrays, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(clgenrays, 1, 4*sizeof(float), o);
+	clSetKernelArg(clgenrays, 2, 4*sizeof(float), up);
+	clSetKernelArg(clgenrays, 3, 4*sizeof(float), gaze);
+	clSetKernelArg(clgenrays, 4, 4*sizeof(float), right);
+	clSetKernelArg(clgenrays, 5, sizeof(float), &d);
+	clEnqueueNDRangeKernel(cqueue, clgenrays, 2, NULL, gsize, lsize, 0, NULL, NULL);
+
+	clSetKernelArg(kernel, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(kernel, 1, sizeof(cl_mem), &clfb);
 	clEnqueueNDRangeKernel(cqueue, kernel, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
 	const size_t origin[3] = {0, 0, 0};
@@ -257,6 +284,9 @@ int
 main(){
 	initgl();
 	initcl();
+
+	raybuf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(Ray)*SCRW*SCRH, NULL, NULL);
+	if(!raybuf) die("couldn't make ray buffer\n");
 
 	const cl_image_format fmt = {CL_RGBA, CL_UNSIGNED_INT8};
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);

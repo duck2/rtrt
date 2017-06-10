@@ -1,5 +1,5 @@
 CC=cc
-CFLAGS=-O3 -g -Wall -Werror
+CFLAGS=-O0 -g -Wall -Werror
 LDFLAGS=-flto -lOpenCL -lglfw -lGLEW -lGL
 
 all: rtrt
