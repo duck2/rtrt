@@ -9,6 +9,8 @@
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #include <CL/opencl.h>
 
+#include "scene.h"
+
 #define SCRW 640
 #define SCRH 480
 
@@ -17,12 +19,6 @@ typedef struct {
 	float d[4];
 	float color[4];
 } __attribute__((__aligned__(16))) Ray;
-
-float o[4] = {0, 0, 0, 1};
-float up[4] = {0, 1, 0, 0};
-float gaze[4] = {0, 0, -1, 0};
-float right[4] = {1, 0, 0, 0};
-float d = 1;
 
 GLFWwindow *win = NULL;
 GLuint fbtex = 0;
