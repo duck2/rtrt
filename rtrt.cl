@@ -38,18 +38,42 @@ typedef struct {
 	float3 amb;
 	float3 diff;
 	float3 spec;
+	float3 mirror;
+	float3 transp;
+	float eta;
 	int phong;
+	enum {M_PHONG, M_MIRROR, M_DIELECTRIC} type;
 } Matl;
 
 typedef struct {
-	Obj objs[8];
-	Light lights[4];
-	Matl matls[4];
+	Obj objs[16384];
+	Light lights[8];
+	Matl matls[8];
 	float3 amb;
 	int objc;
 	int lightc;
 	int matlc;
 } Scene;
+
+/* see jtdaugherty/T2's RayStack */
+#define DEPTH 4
+#define STACKDEPTH 16
+
+typedef struct {
+	Ray r[STACKDEPTH];
+	int depth[STACKDEPTH];
+	float3 weight[STACKDEPTH];
+	int top;
+} Rstack;
+
+void
+Rstack_push(Rstack *s, Ray *r, int depth, float3 weight){
+	if(s->top > STACKDEPTH) return;
+	s->r[s->top] = *r;
+	s->depth[s->top] = depth;
+	s->weight[s->top] = weight;
+	s->top++;
+}
 
 /* https://gamedev.stackexchange.com/questions/96459/fast-ray-sphere-collision-code */
 int
@@ -101,17 +125,17 @@ trglxray(Obj *obj, Ray *ray, Hit *hit){
 }
 
 int
-shadow(Ray ray, __global Scene *scene){
+shadow(Ray *ray,  __global Scene *scene){
 	for(int i=0; i<scene->objc; i++){
 		Obj obj = scene->objs[i];
-		if(obj.type == O_SPH && sphxray(&obj, &ray, NULL)) return 1;
-		else if(obj.type == O_TRGL && trglxray(&obj, &ray, NULL)) return 1;
+		if(obj.type == O_SPH && sphxray(&obj, ray, NULL)) return 1;
+		else if(obj.type == O_TRGL && trglxray(&obj, ray, NULL)) return 1;
 	}
 	return 0;
 }
 
 float3
-shade(Ray ray, Hit hit, __global Scene *scene){
+shade(Ray *ray, Hit hit, __global Scene *scene){
 	float3 out = scene->amb;
 	Matl matl = scene->matls[hit.matl_idx];
 	for(int i=0; i<scene->lightc; i++){
@@ -121,10 +145,10 @@ shade(Ray ray, Hit hit, __global Scene *scene){
 		Ray shray;
 		shray.o = hit.point + EPSILON*L;
 		shray.d = normalize(L);
-		if(shadow(shray, scene)) continue;
+		if(shadow(&shray, scene)) continue;
 
 		float3 lum = (1/dot(L, L)) * light.lum;
-		float3 V = -1 * ray.d;
+		float3 V = -1 * ray->d;
 		float3 H = normalize(L + V);
 		float3 N = hit.normal;
 		float diff = fmax(dot(N, normalize(L)), 0);
@@ -135,19 +159,19 @@ shade(Ray ray, Hit hit, __global Scene *scene){
 }
 
 float3
-trace(Ray ray, __global Scene *scene){
+trace(Ray *ray, Rstack *stack, __global Scene *scene){
 	int found = 0;
 	Hit hit, nhit;
 	hit.dist = 1e20;
 	for(int i=0; i<scene->objc; i++){
 		Obj obj = scene->objs[i];
 		if(obj.type == O_SPH){
-			if(sphxray(&obj, &ray, &nhit) && nhit.dist < hit.dist){
+			if(sphxray(&obj, ray, &nhit) && nhit.dist < hit.dist){
 				found = 1;
 				hit = nhit;
 			}
 		}else{
-			if(trglxray(&obj, &ray, &nhit) && nhit.dist < hit.dist){
+			if(trglxray(&obj, ray, &nhit) && nhit.dist < hit.dist){
 				found = 1;
 				hit = nhit;
 			}
@@ -155,6 +179,20 @@ trace(Ray ray, __global Scene *scene){
 	}
 	if(found) return shade(ray, hit, scene);
 	else return (float3)(0, 0, 0);
+}
+
+float3
+rectrace(Ray ray, __global Scene *scene){
+	Rstack stack;
+	stack.top = 0;
+	Rstack_push(&stack, &ray, 0, (float3)1);
+
+	float3 out = (float3)(0, 0, 0);
+	while(stack.top){
+		stack.top--;
+		out += stack.weight[stack.top] * trace(&ray, &stack, scene);
+	}
+	return out;
 }
 
 /* giant kernel. poor partitioning, lower memory traffic. */
@@ -166,6 +204,6 @@ clmain(float3 o, float3 up, float3 gaze, float3 right, float d, __global Scene *
 	Ray ray;
 	ray.o = o;
 	ray.d = normalize(d*gaze - right - up + 2*right*(x/(float)width) + 2*up*(y/(float)height));
-	float4 color = (float4)(trace(ray, scene), 1);
+	float4 color = (float4)(rectrace(ray, scene), 1);
 	write_imagef(fb, (int2)(x, y), color);
 }

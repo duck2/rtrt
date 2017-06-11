@@ -38,14 +38,20 @@ typedef struct {
 	cl_float dummy2;
 	cl_float spec[3];
 	cl_float dummy3;
+	cl_float mirror[3];
+	cl_float dummy4;
+	cl_float transp[3];
+	cl_float dummy5;
+	cl_float eta;
 	cl_int phong;
-	cl_float dummy4[3];
+	enum {M_PHONG, M_MIRROR, M_DIELECTRIC} type;
+	cl_float dummy6;
 } __attribute__((__aligned__(16))) Matl;
 
 typedef struct {
-	Obj objs[8];
-	Light lights[4];
-	Matl matls[4];
+	Obj objs[16384];
+	Light lights[8];
+	Matl matls[8];
 	cl_float amb[3];
 	cl_float dummy;
 	cl_int objc;

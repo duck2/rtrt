@@ -355,7 +355,7 @@ main(int argc, char** argv){
 
 	scene1();
 
-	scenebuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_WRITE, sizeof(Scene), &scene, NULL);
+	scenebuf = clCreateBuffer(ctx, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(Scene), &scene, NULL);
 	if(!scenebuf) die("couldn't make scene buffer\n");
 
 	const cl_image_format fmt = {CL_RGBA, CL_UNORM_INT8};
