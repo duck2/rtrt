@@ -15,13 +15,11 @@
 #define SCRW 640
 #define SCRH 480
 
-
 typedef struct {
 	float o[4];
 	float d[4];
 	float color[4];
 } __attribute__((__aligned__(16))) Ray;
-
 
 GLuint fbtex = 0;
 GLuint glprog = 0;
@@ -63,14 +61,6 @@ cl_kernel kernel = 0;
 cl_kernel clgenrays = 0;
 cl_mem clfb = 0;
 cl_mem raybuf = 0;
-
-/* cleanup */
-/*void
-nukegl(){
-	if(fbtex) glDeleteTextures(1, &fbtex);
-	if(win) glfwDestroyWindow(win);
-	glfwTerminate();
-}*/
 
 void
 nukecl(){
@@ -237,7 +227,7 @@ initcl(){
 
 void
 step(){
-	float currenttime1 = glutGet(GLUT_ELAPSED_TIME);
+	float base = glutGet(GLUT_ELAPSED_TIME);
 
 	usleep(2000); /* limits to ~500 fps without vsync */
 
@@ -275,22 +265,11 @@ step(){
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glDisableVertexAttribArray(0);
 
-
 	glutSwapBuffers();
 
-	float currenttime2 = glutGet(GLUT_ELAPSED_TIME);
-
-	// Set FPS to 100
-    float diff = currenttime2-currenttime1;
-
-    if (diff < 10000)
-    usleep(10000 - diff);
-
 	char title[32];
-	sprintf(title, "FPS: %4.2f", 1000.0/(glutGet(GLUT_ELAPSED_TIME)-currenttime1));
+	sprintf(title, "rtrt | %4.2f fps", 1000.0/(glutGet(GLUT_ELAPSED_TIME) - base));
 	glutSetWindowTitle(title);
-	
-
 }
 
 int
@@ -305,15 +284,10 @@ main(int argc, char** argv){
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
-
 	glutDisplayFunc(step);
-    //glutKeyboardFunc(keyboard);
-    glutIdleFunc(glutPostRedisplay);
-
-    glutMainLoop();
-
+	glutIdleFunc(glutPostRedisplay);
+	glutMainLoop();
 
 	nukecl();
-	//nukegl();
 	return 0;
 }
