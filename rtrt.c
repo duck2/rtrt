@@ -11,11 +11,14 @@
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #include <CL/opencl.h>
 
-#include "scene.h"
+#include "sset.h"
 #include "linmath.h"
 
 #define SCRW 640
 #define SCRH 640
+
+float speedx = 0, speedz = 0, accx = 0, accz = 0;
+float anglev = 0, angleh = 0;
 
 GLuint fbtex = 0;
 GLuint glprog = 0;
@@ -237,17 +240,13 @@ keydown(unsigned char key, int x, int y){
 	case 'd':
 		accx = 0.01; break;
 	case 'j': // turn left
-		anglev = 0.01f ;
-		break;
-	case 'l': // turn right
-		anglev = -0.01f ;
-		break;
+		anglev = 0.01f; break;
+	case 'l': // right
+		anglev = -0.01f; break;
 	case 'k': // look up
-		angleh = 0.01f ;
-		break;
+		angleh = 0.01f; break;
 	case 'm': // look down
-		angleh = -0.01f ;
-		break;
+		angleh = -0.01f; break;
 	default: break;
 	}
 }
@@ -350,10 +349,13 @@ reshape(int w, int h){
 
 int
 main(int argc, char** argv){
+	if(argc != 2) die("usage: %s <scene file>\n", argv[0]);
+
+	printf("reading scene file...\n");
+	sset(argv[1]);
+
 	initgl(argc, argv);
 	initcl();
-
-	scene1();
 
 	scenebuf = clCreateBuffer(ctx, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, sizeof(Scene), &scene, NULL);
 	if(!scenebuf) die("couldn't make scene buffer\n");

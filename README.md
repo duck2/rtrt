@@ -8,8 +8,9 @@ roadmap:
 
 	- [x] get CL/GL interop working, render empty buffer with some fps
 	- [x] flat Blinn-Phong, spheres/triangles, no interaction, no BVH, no recursion, hardcoded scene
-	- [ ] scene file
-	- [ ] interaction
+	- [x] scene file
+	- [x] interaction
+		- [ ] mouse grab
 	- [ ] reflective Blinn-Phong
 	- [ ] acceleration structure
 	- [ ] refractions: one reflective, one refractive pass over rays

@@ -46,7 +46,7 @@ typedef struct {
 } Matl;
 
 typedef struct {
-	Obj objs[16384];
+	Obj objs[32768];
 	Light lights[8];
 	Matl matls[8];
 	float3 amb;
