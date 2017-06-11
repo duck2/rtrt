@@ -10,7 +10,6 @@ typedef struct {
 	cl_float v1[4];
 	cl_float v2[4];
 	cl_float v3[4];
-	cl_float n[4];
 } Trgl;
 typedef struct {
 	union {
@@ -18,8 +17,8 @@ typedef struct {
 		Trgl trgl;
 	};
 	cl_int matl_idx;
-	cl_int type;
-	cl_float dummy[2];
+	enum {O_SPH, O_TRGL} type;
+	float dummy[2];
 } __attribute__((__aligned__(16))) Obj;
 
 typedef struct {
@@ -51,9 +50,22 @@ scene1(){
 	lights[0] = light;
 	lightc = 1;
 
-	Obj obj = {.matl_idx = 1, .type = 1, .sph = {.o = {0, 5, 0, 1}, .r = 5}};
+	Obj obj = {.matl_idx = 1, .type = O_SPH, .sph = {.o = {0, 5, 0, 1}, .r = 5}};
 	objs[0] = obj;
-	objc = 1;
+
+	obj.matl_idx = 1;
+	obj.type = O_TRGL;
+	obj.trgl.v1[0] = 100; obj.trgl.v1[1] = 0; obj.trgl.v1[2] = -100; obj.trgl.v1[3] = 1;
+	obj.trgl.v2[0] = -100; obj.trgl.v2[1] = 0; obj.trgl.v2[2] = 100; obj.trgl.v2[3] = 1;
+	obj.trgl.v3[0] = 100; obj.trgl.v3[1] = 0; obj.trgl.v3[2] = 100; obj.trgl.v3[3] = 1;
+	objs[1] = obj;
+	
+	obj.trgl.v1[0] = -100; obj.trgl.v1[1] = 0; obj.trgl.v1[2] = 100; obj.trgl.v1[3] = 1;
+	obj.trgl.v2[0] = 100; obj.trgl.v2[1] = 0; obj.trgl.v2[2] = -100; obj.trgl.v2[3] = 1;
+	obj.trgl.v3[0] = -100; obj.trgl.v3[1] = 0; obj.trgl.v3[2] = -100; obj.trgl.v3[3] = 1;
+	objs[2] = obj;
+
+	objc = 3;
 
 	Matl matl = {.amb = {1, 1, 1, 0}, .diff = {1, 1, 1, 0}, .spec = {1, 1, 1, 0}, .phong = 1};
 	matls[0] = matl;
