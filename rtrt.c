@@ -16,9 +16,13 @@
 #define SCRH 480
 
 typedef struct {
-	float o[4];
-	float d[4];
-	float color[4];
+	cl_float o[4];
+	cl_float d[4];
+	cl_float color[4];
+	cl_float hitpoint[4];
+	cl_float normal[4];
+	cl_float dist;
+	cl_int hit;
 } __attribute__((__aligned__(16))) Ray;
 
 GLuint fbtex = 0;
@@ -57,17 +61,21 @@ cl_context ctx = 0;
 cl_device_id dev = 0;
 cl_command_queue cqueue = 0;
 cl_program clprog = 0;
-cl_kernel kernel = 0;
+
 cl_kernel clgenrays = 0;
+cl_kernel clintersect = 0;
+cl_kernel clfinal = 0;
+
 cl_mem clfb = 0;
 cl_mem raybuf = 0;
+cl_mem objbuf = 0;
+cl_mem matlbuf = 0;
 
 void
 nukecl(){
 	if(clfb) clReleaseMemObject(clfb);
 	if(raybuf) clReleaseMemObject(raybuf);
 	if(cqueue) clReleaseCommandQueue(cqueue);
-	if(kernel) clReleaseKernel(kernel);
 	if(clprog) clReleaseProgram(clprog);
 	if(ctx) clReleaseContext(ctx);
 }
@@ -132,9 +140,9 @@ initgl(int argc,char** argv){
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );
-    glutInitWindowPosition(100, 100);
-    glutInitWindowSize(SCRW, SCRH);
-    glutCreateWindow("Screen");
+	glutInitWindowPosition(100, 100);
+	glutInitWindowSize(SCRW, SCRH);
+	glutCreateWindow("Screen");
 
 	if(glewInit() != GLEW_OK) die("couldn't init glew\n");
 
@@ -219,10 +227,12 @@ initcl(){
 	printf("extensions: %s\n", ext);
 
 	clprog = mkclprog("rtrt.cl");
-	kernel = clCreateKernel(clprog, "red", NULL);
-	if(!kernel) die("couldn't make kernel\n");
 	clgenrays = clCreateKernel(clprog, "genrays", NULL);
 	if(!clgenrays) die("couldn't make genrays kernel\n");
+	clintersect = clCreateKernel(clprog, "intersect", NULL);
+	if(!clintersect) die("couldn't make intersect kernel\n");
+	clfinal = clCreateKernel(clprog, "final", NULL);
+	if(!clfinal) die("couldn't make clfinal\n");
 }
 
 void
@@ -241,9 +251,14 @@ step(){
 	clSetKernelArg(clgenrays, 5, sizeof(float), &d);
 	clEnqueueNDRangeKernel(cqueue, clgenrays, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
-	clSetKernelArg(kernel, 0, sizeof(cl_mem), &raybuf);
-	clSetKernelArg(kernel, 1, sizeof(cl_mem), &clfb);
-	clEnqueueNDRangeKernel(cqueue, kernel, 2, NULL, gsize, lsize, 0, NULL, NULL);
+	clSetKernelArg(clintersect, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(clintersect, 1, sizeof(cl_mem), &objbuf);
+	clSetKernelArg(clintersect, 2, sizeof(int), &objc);
+	clEnqueueNDRangeKernel(cqueue, clintersect, 2, NULL, gsize, lsize, 0, NULL, NULL);
+
+	clSetKernelArg(clfinal, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(clfinal, 1, sizeof(cl_mem), &clfb);
+	clEnqueueNDRangeKernel(cqueue, clfinal, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
 	const size_t origin[3] = {0, 0, 0};
 	const size_t region[3] = {SCRW, SCRH, 1};
@@ -272,18 +287,32 @@ step(){
 	glutSetWindowTitle(title);
 }
 
+void
+reshape(int w, int h){
+	glutReshapeWindow(SCRW, SCRH);
+}
+
 int
 main(int argc, char** argv){
 	initgl(argc, argv);
 	initcl();
 
+	scene1();
+
 	raybuf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(Ray)*SCRW*SCRH, NULL, NULL);
 	if(!raybuf) die("couldn't make ray buffer\n");
+
+	objbuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_ONLY, sizeof(Obj)*objc, objs, NULL);
+	if(!objbuf) die("couldn't make obj buffer\n");
+
+	matlbuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_ONLY, sizeof(Matl)*matlc, matls, NULL);
+	if(!matlbuf) die("couldn't make matl buffer\n");
 
 	const cl_image_format fmt = {CL_RGBA, CL_UNSIGNED_INT8};
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
+	glutReshapeFunc(reshape);
 	glutDisplayFunc(step);
 	glutIdleFunc(glutPostRedisplay);
 	glutMainLoop();

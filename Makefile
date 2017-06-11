@@ -4,5 +4,5 @@ LDFLAGS=-flto -lOpenCL -lglut -lGLEW -lGL
 
 all: rtrt
 
-rtrt: rtrt.c
+rtrt: rtrt.c scene.h
 	$(CC) $(CFLAGS)  rtrt.c -o rtrt  $(LDFLAGS)

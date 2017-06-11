@@ -2,36 +2,39 @@
 #define _SCENE_H_
 
 typedef struct {
-	float o[4];
-	float r;
-} __attribute__((__aligned__(16))) Sph;
+	cl_float o[4];
+	cl_float r;
+	cl_float dummy[3];
+} Sph;
 typedef struct {
-	int v1;
-	int v2;
-	int v3;
-} __attribute__((__aligned__(16))) Trgl;
+	cl_float v1[4];
+	cl_float v2[4];
+	cl_float v3[4];
+	cl_float n[4];
+} Trgl;
 typedef struct {
-	int matl_idx;
-	enum {O_SPH, O_TRGL} t;
 	union {
 		Sph sph;
 		Trgl trgl;
 	};
+	cl_int matl_idx;
+	cl_int type;
+	cl_float dummy[2];
 } __attribute__((__aligned__(16))) Obj;
 
 typedef struct {
-	float o[4];
-	float lum[4];
+	cl_float o[4];
+	cl_float lum[4];
 } __attribute__((__aligned__(16))) Light;
 
 typedef struct {
-	float amb[4];
-	float diff[4];
-	float spec[4];
-	int phong;
+	cl_float amb[4];
+	cl_float diff[4];
+	cl_float spec[4];
+	cl_int phong;
 } __attribute__((__aligned__(16))) Matl;
 
-float o[4] = {0, 0, 0, 1};
+float o[4] = {0, 5, 25, 1};
 float up[4] = {0, 1, 0, 0};
 float gaze[4] = {0, 0, -1, 0};
 float right[4] = {1, 0, 0, 0};
@@ -41,29 +44,14 @@ float amb[4] = {25, 25, 25, 0};
 Light lights[8]; int lightc = 0;
 Obj objs[8]; int objc = 0;
 Matl matls[8]; int matlc = 0;
-float vertices[32]; int vertexc = 0;
 
 void
 scene1(){
-	Light light = {{0, 0, 0, 1}, {1000, 1000, 1000, 0}};
+	Light light = {{10, 10, 10, 1}, {100000, 100000, 100000, 0}};
 	lights[0] = light;
 	lightc = 1;
 
-	float tmp_vertices[] = {-0.5, 0.5, -2, 1,
-				-0.5, -0.5, -2, 1,
-				0.5, -0.5, -2, 1,
-				0.5, 0.5, -2, 1,
-				0.75, 0.75, -2, 1,
-				1, 0.75, -2, 1,
-				0.875, 1, -2, 1,
-				-0.875, 1, -2, 1};
-	memcpy(vertices, tmp_vertices, 32 * sizeof(float));
-	vertexc = 8;
-
-	Obj obj;
-	obj.matl_idx = 1;
-	obj.t = O_TRGL;
-	obj.trgl.v1 = 3; obj.trgl.v2 = 1; obj.trgl.v3 = 2;
+	Obj obj = {.matl_idx = 1, .type = 1, .sph = {.o = {0, 5, 0, 1}, .r = 5}};
 	objs[0] = obj;
 	objc = 1;
 
