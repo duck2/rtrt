@@ -12,6 +12,7 @@
 #include <CL/opencl.h>
 
 #include "scene.h"
+#include "linmath.h"
 
 #define SCRW 640
 #define SCRH 640
@@ -221,19 +222,32 @@ initcl(){
 
 void
 keydown(unsigned char key, int x, int y){
+
 	switch(key){
 	case 27: /* exit on ESC */
 		glutDestroyWindow(winID);
 		exit(0);
 		break; 
 	case 'w':
-		accz = 0.1; break;
+		accz = 0.01; break;
 	case 's':
-		accz = -0.1; break;
+		accz = -0.01; break;
 	case 'a':
-		accx = -0.1; break;
+		accx = -0.01; break;
 	case 'd':
-		accx = 0.1; break;
+		accx = 0.01; break;
+	case 'j': // turn left
+		anglev = 0.01f ;
+		break;
+	case 'l': // turn right
+		anglev = -0.01f ;
+		break;
+	case 'k': // look up
+		angleh = 0.01f ;
+		break;
+	case 'm': // look down
+		angleh = -0.01f ;
+		break;
 	default: break;
 	}
 }
@@ -251,6 +265,12 @@ keyup(unsigned char key, int x, int y){
 	case 'a':
 	case 'd':
 		accx = 0; break;
+	case 'j':
+	case 'l':
+		anglev = 0; break;
+	case 'k':
+	case 'm':
+		angleh = 0; break;
 	default: break;
 	}
 }
@@ -260,14 +280,14 @@ void mouse(int button, int state, int x, int y)
 	if ((button == 3) || (button == 4)){
 		if(state == GLUT_UP) return;
 		if(button == 3) d += 0.1; //zoom in
-		else if(button == 4) d -= 0.1;
+		else if(button == 4) d -= 0.1; //zoom out
 	}
 }
 
 void
 step(){
 	float base = glutGet(GLUT_ELAPSED_TIME);
-
+	quat rotate, temp;
 	size_t gsize[2] = {SCRW, SCRH};
 
 	speedx += accx;
@@ -280,6 +300,14 @@ step(){
 	o[2] += right[2]*speedx;
 	speedx *= 0.95;
 	speedz *= 0.95;
+	quat_rotate(rotate, anglev, up);
+	quat_mul_vec3(temp, rotate, right);
+	memcpy(right, temp, 3*sizeof(float));
+	vec3_mul_cross(gaze, up, right);
+	quat_rotate(rotate, angleh, right);
+	quat_mul_vec3(temp, rotate, up);
+	memcpy(up, temp, 3*sizeof(float));
+	vec3_mul_cross(gaze, up, right);
 
 	clSetKernelArg(clmain, 0, 4*sizeof(float), o);
 	clSetKernelArg(clmain, 1, 4*sizeof(float), up);

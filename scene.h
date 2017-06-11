@@ -61,7 +61,7 @@ float up[3] = {0, 1, 0};
 float gaze[3] = {0, 0, -1};
 float right[3] = {1, 0, 0};
 float d = 1;
-float speedx = 0, speedz = 0, accx = 0, accz = 0;
+float speedx = 0, speedz = 0, accx = 0, accz = 0, angleh = 0, anglev = 0;
 
 float amb[3] = {25, 25, 25};
 Light lights[8]; int lightc = 0;
