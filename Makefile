@@ -1,8 +1,8 @@
 CC=cc
-CFLAGS=-O0 -g -Wall -Werror
-LDFLAGS=-flto -lOpenCL -lglfw -lGLEW -lGL
+CFLAGS=-O3 -g -Wall -Werror
+LDFLAGS=-flto -lOpenCL -lglut -lGLEW -lGL
 
 all: rtrt
 
 rtrt: rtrt.c
-	$(CC) $(CFLAGS) $(LDFLAGS) rtrt.c -o rtrt
+	$(CC) $(CFLAGS)  rtrt.c -o rtrt  $(LDFLAGS)

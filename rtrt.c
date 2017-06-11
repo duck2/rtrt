@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdarg.h>
 
 #include <GL/glew.h>
-#include <GLFW/glfw3.h>
+#include <GL/glut.h>
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #include <CL/opencl.h>
@@ -14,13 +15,14 @@
 #define SCRW 640
 #define SCRH 480
 
+
 typedef struct {
 	float o[4];
 	float d[4];
 	float color[4];
 } __attribute__((__aligned__(16))) Ray;
 
-GLFWwindow *win = NULL;
+
 GLuint fbtex = 0;
 GLuint glprog = 0;
 GLuint fbtexloc;
@@ -63,12 +65,12 @@ cl_mem clfb = 0;
 cl_mem raybuf = 0;
 
 /* cleanup */
-void
+/*void
 nukegl(){
 	if(fbtex) glDeleteTextures(1, &fbtex);
 	if(win) glfwDestroyWindow(win);
 	glfwTerminate();
-}
+}*/
 
 void
 nukecl(){
@@ -84,13 +86,14 @@ nukecl(){
 void
 die(char * f, ...){
 	nukecl();
-	nukegl();
+	//nukegl();
 	va_list ap;
 	va_start(ap, f);
 	vfprintf(stderr, f, ap);
 	va_end(ap);
 	exit(1);
 }
+
 
 GLuint
 mkglprog(){
@@ -135,15 +138,13 @@ errgl(int err, const char *desc){
 
 /* set up window, gl context, out texture, screen quad and shaders */
 void
-initgl(){
-	if(!glfwInit()) die("couldn't init glfw\n");
-	glfwSetErrorCallback(errgl);
-	win = glfwCreateWindow(SCRW, SCRH, "rtrt", NULL, NULL);
-	if(!win) die("couldn't create window\n");
+initgl(int argc,char** argv){
 
-	glfwSetWindowSizeLimits(win, SCRW, SCRH, SCRW, SCRH);
-	glfwMakeContextCurrent(win);
-	glfwSwapInterval(1);
+	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );
+    glutInitWindowPosition(100, 100);
+    glutInitWindowSize(SCRW, SCRH);
+    glutCreateWindow("Screen");
 
 	if(glewInit() != GLEW_OK) die("couldn't init glew\n");
 
@@ -179,7 +180,7 @@ mkclprog(char *fname){
 	fseek(f, 0, SEEK_END); int fsize = ftell(f); fseek(f, 0, SEEK_SET);
 
 	char *dump = malloc(fsize+1);
-	fread(dump, 1, fsize, f);
+	err = fread(dump, 1, fsize, f);
 	dump[fsize] = 0;
 	fclose(f);
 
@@ -236,6 +237,8 @@ initcl(){
 
 void
 step(){
+	float currenttime1 = glutGet(GLUT_ELAPSED_TIME);
+
 	usleep(2000); /* limits to ~500 fps without vsync */
 
 	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
@@ -272,13 +275,27 @@ step(){
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 	glDisableVertexAttribArray(0);
 
-	glfwSwapBuffers(win);
-	glfwPollEvents();
+
+	glutSwapBuffers();
+
+	float currenttime2 = glutGet(GLUT_ELAPSED_TIME);
+
+	// Set FPS to 100
+    float diff = currenttime2-currenttime1;
+
+    if (diff < 10000)
+    usleep(10000 - diff);
+
+	char title[32];
+	sprintf(title, "FPS: %4.2f", 1000.0/(glutGet(GLUT_ELAPSED_TIME)-currenttime1));
+	glutSetWindowTitle(title);
+	
+
 }
 
 int
-main(){
-	initgl();
+main(int argc, char** argv){
+	initgl(argc, argv);
 	initcl();
 
 	raybuf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(Ray)*SCRW*SCRH, NULL, NULL);
@@ -288,16 +305,15 @@ main(){
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
-	char title[32];
-	while(!glfwWindowShouldClose(win)){
-		double time = glfwGetTime();
-		step();
-		int fps = 1 / (glfwGetTime() - time);
-		snprintf(title, 32, "rtrt | %d fps", fps);
-		glfwSetWindowTitle(win, (const char *)title);
-	}
+
+	glutDisplayFunc(step);
+    //glutKeyboardFunc(keyboard);
+    glutIdleFunc(glutPostRedisplay);
+
+    glutMainLoop();
+
 
 	nukecl();
-	nukegl();
+	//nukegl();
 	return 0;
 }
