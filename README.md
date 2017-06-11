@@ -7,7 +7,7 @@ roadmap:
 - [x] make roadmap
 
 	- [x] get CL/GL interop working, render empty buffer with some fps
-	- [ ] flat Blinn-Phong, spheres/triangles, no interaction, no BVH, no recursion, hardcoded scene
+	- [x] flat Blinn-Phong, spheres/triangles, no interaction, no BVH, no recursion, hardcoded scene
 	- [ ] scene file
 	- [ ] interaction
 	- [ ] reflective Blinn-Phong

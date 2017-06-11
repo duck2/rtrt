@@ -13,15 +13,16 @@
 #include "scene.h"
 
 #define SCRW 640
-#define SCRH 480
+#define SCRH 640
 
 typedef struct {
-	cl_float o[4];
-	cl_float d[4];
-	cl_float color[4];
-	cl_float hitpoint[4];
-	cl_float normal[4];
+	cl_float o[3];
+	cl_float d[3];
+	cl_float color[3];
+	cl_float hitpoint[3];
+	cl_float normal[3];
 	cl_float dist;
+	cl_int matl_idx;
 	cl_int hit;
 } __attribute__((__aligned__(16))) Ray;
 
@@ -68,8 +69,7 @@ cl_kernel clfinal = 0;
 
 cl_mem clfb = 0;
 cl_mem raybuf = 0;
-cl_mem objbuf = 0;
-cl_mem matlbuf = 0;
+cl_mem scenebuf = 0;
 
 void
 nukecl(){
@@ -243,7 +243,6 @@ step(){
 
 	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
 
-	clSetKernelArg(clgenrays, 0, sizeof(cl_mem), &raybuf);
 	clSetKernelArg(clgenrays, 1, 4*sizeof(float), o);
 	clSetKernelArg(clgenrays, 2, 4*sizeof(float), up);
 	clSetKernelArg(clgenrays, 3, 4*sizeof(float), gaze);
@@ -251,13 +250,7 @@ step(){
 	clSetKernelArg(clgenrays, 5, sizeof(float), &d);
 	clEnqueueNDRangeKernel(cqueue, clgenrays, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
-	clSetKernelArg(clintersect, 0, sizeof(cl_mem), &raybuf);
-	clSetKernelArg(clintersect, 1, sizeof(cl_mem), &objbuf);
-	clSetKernelArg(clintersect, 2, sizeof(int), &objc);
 	clEnqueueNDRangeKernel(cqueue, clintersect, 2, NULL, gsize, lsize, 0, NULL, NULL);
-
-	clSetKernelArg(clfinal, 0, sizeof(cl_mem), &raybuf);
-	clSetKernelArg(clfinal, 1, sizeof(cl_mem), &clfb);
 	clEnqueueNDRangeKernel(cqueue, clfinal, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
 	const size_t origin[3] = {0, 0, 0};
@@ -302,15 +295,19 @@ main(int argc, char** argv){
 	raybuf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(Ray)*SCRW*SCRH, NULL, NULL);
 	if(!raybuf) die("couldn't make ray buffer\n");
 
-	objbuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_ONLY, sizeof(Obj)*objc, objs, NULL);
-	if(!objbuf) die("couldn't make obj buffer\n");
+	scenebuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_WRITE, sizeof(Scene), &scene, NULL);
+	if(!scenebuf) die("couldn't make scene buffer\n");
 
-	matlbuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_ONLY, sizeof(Matl)*matlc, matls, NULL);
-	if(!matlbuf) die("couldn't make matl buffer\n");
+	clSetKernelArg(clgenrays, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(clintersect, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(clintersect, 1, sizeof(cl_mem), &scenebuf);
 
-	const cl_image_format fmt = {CL_RGBA, CL_UNSIGNED_INT8};
+	const cl_image_format fmt = {CL_RGBA, CL_UNORM_INT8};
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
+
+	clSetKernelArg(clfinal, 0, sizeof(cl_mem), &raybuf);
+	clSetKernelArg(clfinal, 1, sizeof(cl_mem), &clfb);
 
 	glutReshapeFunc(reshape);
 	glutDisplayFunc(step);
