@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include <math.h>
 
 #include <GL/glew.h>
 #include <GL/glut.h>
@@ -31,7 +32,7 @@ GLuint glprog = 0;
 GLuint fbtexloc;
 GLuint quadvbo;
 unsigned char fb[SCRW*SCRH*4];
-
+int winID;
 /* just enough to render a texture on screen quad */
 const char *vshadersrc = "#version 130\n"
 "in vec3 modelspace;\n"
@@ -138,7 +139,7 @@ initgl(int argc,char** argv){
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH );
 	glutInitWindowPosition(100, 100);
 	glutInitWindowSize(SCRW, SCRH);
-	glutCreateWindow("Screen");
+	winID = glutCreateWindow("Screen");
 
 	if(glewInit() != GLEW_OK) die("couldn't init glew\n");
 
@@ -227,6 +228,61 @@ initcl(){
 	if(!clmain) die("couldn't make kernel\n");
 }
 
+
+void
+keyboard(unsigned char key, int x, int y){
+	float angle = atan2(gaze[2] , gaze[0]);
+	float angle2 = atan2( sqrt(pow(gaze[0],2) + pow(gaze[2],2)) , gaze[1]);
+	//float tempY = sqrt( pow(gaze[1],2) + pow(gaze[2] , 2) ) * cos(angle + pitch/180*M_PI) ;
+	float tempX = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI) ;
+	switch(key){
+		case 27: // Escape key
+			glutDestroyWindow(winID);
+			exit (0);
+			break;
+		case 'w' : // move forward
+			speed += 0.1;
+			break;
+		case 's' : // move backward
+			speed -= 0.1 ;
+			break;
+		case 'a' : // turn left
+			yaw = -0.5f;
+			gaze[0] = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI) ;
+			gaze[2] = sqrt( pow(tempX,2) + pow(gaze[2] , 2) ) * sin(angle + yaw/180*M_PI) ;
+			break;
+		case 'd' : // turn right
+			yaw = 0.5f;
+			gaze[0] = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI) ;
+			gaze[2] = sqrt( pow(tempX,2) + pow(gaze[2] , 2) ) * sin(angle + yaw/180*M_PI) ;
+			break;
+		case 'q' : // increase pitch
+			pitch = -1.0f;
+			gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2) ) * cos(angle2 + pitch/180*M_PI) ;
+			break;
+		case 'e' : // decrease pitch
+			pitch = 1.0f;				
+			gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2) ) * cos(angle2 + pitch/180*M_PI) ;
+			break;
+		default:
+			break;
+	}
+}
+
+
+void mouse(int button, int state, int x, int y)
+{
+	// Wheel reports as button 3(scroll up) and button 4(scroll down)
+	if ((button == 3) || (button == 4)){ // It's a wheel event
+		// Each wheel event reports like a button click, GLUT_DOWN then GLUT_UP
+		if (state == GLUT_UP) return; // Disregard redundant GLUT_UP events
+		if(button==3) d += 0.1; //zoom in
+		else if(button==4) d -= 0.1; //zoom out
+	}/*else{  // normal button event
+		printf("Button %s At %d %d\n", (state == GLUT_DOWN) ? "Down" : "Up", x, y);
+	}*/
+}
+
 void
 step(){
 	float base = glutGet(GLUT_ELAPSED_TIME);
@@ -235,6 +291,9 @@ step(){
 
 	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
 
+	o[0] += gaze[0]*speed;
+	o[1] += gaze[1]*speed; 
+	o[2] += gaze[2]*speed;
 	clSetKernelArg(clmain, 0, 4*sizeof(float), o);
 	clSetKernelArg(clmain, 1, 4*sizeof(float), up);
 	clSetKernelArg(clmain, 2, 4*sizeof(float), gaze);
@@ -293,6 +352,8 @@ main(int argc, char** argv){
 
 	glutReshapeFunc(reshape);
 	glutDisplayFunc(step);
+	glutKeyboardFunc(keyboard);
+	glutMouseFunc(mouse);
 	glutIdleFunc(glutPostRedisplay);
 	glutMainLoop();
 

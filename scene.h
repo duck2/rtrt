@@ -60,7 +60,7 @@ float o[3] = {0, 5, 25};
 float up[3] = {0, 1, 0};
 float gaze[3] = {0, 0, -1};
 float right[3] = {1, 0, 0};
-float d = 1;
+float d = 1, speed = 0, yaw = 0, pitch = 0;
 
 float amb[3] = {25, 25, 25};
 Light lights[8]; int lightc = 0;
