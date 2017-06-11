@@ -63,18 +63,15 @@ cl_device_id dev = 0;
 cl_command_queue cqueue = 0;
 cl_program clprog = 0;
 
-cl_kernel clgenrays = 0;
-cl_kernel clintersect = 0;
-cl_kernel clfinal = 0;
+cl_kernel clmain = 0;
 
 cl_mem clfb = 0;
-cl_mem raybuf = 0;
 cl_mem scenebuf = 0;
 
 void
 nukecl(){
 	if(clfb) clReleaseMemObject(clfb);
-	if(raybuf) clReleaseMemObject(raybuf);
+	if(scenebuf) clReleaseMemObject(scenebuf);
 	if(cqueue) clReleaseCommandQueue(cqueue);
 	if(clprog) clReleaseProgram(clprog);
 	if(ctx) clReleaseContext(ctx);
@@ -84,7 +81,6 @@ nukecl(){
 void
 die(char * f, ...){
 	nukecl();
-	//nukegl();
 	va_list ap;
 	va_start(ap, f);
 	vfprintf(stderr, f, ap);
@@ -226,13 +222,9 @@ initcl(){
 	clGetDeviceInfo(devs[0], CL_DEVICE_EXTENSIONS, 1024, ext, NULL);
 	printf("extensions: %s\n", ext);
 
-	clprog = mkclprog("rtrt.cl");
-	clgenrays = clCreateKernel(clprog, "genrays", NULL);
-	if(!clgenrays) die("couldn't make genrays kernel\n");
-	clintersect = clCreateKernel(clprog, "intersect", NULL);
-	if(!clintersect) die("couldn't make intersect kernel\n");
-	clfinal = clCreateKernel(clprog, "final", NULL);
-	if(!clfinal) die("couldn't make clfinal\n");
+	clprog = mkclprog("rtrt2.cl");
+	clmain = clCreateKernel(clprog, "clmain", NULL);
+	if(!clmain) die("couldn't make kernel\n");
 }
 
 void
@@ -243,15 +235,12 @@ step(){
 
 	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
 
-	clSetKernelArg(clgenrays, 1, 4*sizeof(float), o);
-	clSetKernelArg(clgenrays, 2, 4*sizeof(float), up);
-	clSetKernelArg(clgenrays, 3, 4*sizeof(float), gaze);
-	clSetKernelArg(clgenrays, 4, 4*sizeof(float), right);
-	clSetKernelArg(clgenrays, 5, sizeof(float), &d);
-	clEnqueueNDRangeKernel(cqueue, clgenrays, 2, NULL, gsize, lsize, 0, NULL, NULL);
-
-	clEnqueueNDRangeKernel(cqueue, clintersect, 2, NULL, gsize, lsize, 0, NULL, NULL);
-	clEnqueueNDRangeKernel(cqueue, clfinal, 2, NULL, gsize, lsize, 0, NULL, NULL);
+	clSetKernelArg(clmain, 0, 4*sizeof(float), o);
+	clSetKernelArg(clmain, 1, 4*sizeof(float), up);
+	clSetKernelArg(clmain, 2, 4*sizeof(float), gaze);
+	clSetKernelArg(clmain, 3, 4*sizeof(float), right);
+	clSetKernelArg(clmain, 4, sizeof(float), &d);
+	clEnqueueNDRangeKernel(cqueue, clmain, 2, NULL, gsize, lsize, 0, NULL, NULL);
 
 	const size_t origin[3] = {0, 0, 0};
 	const size_t region[3] = {SCRW, SCRH, 1};
@@ -292,22 +281,15 @@ main(int argc, char** argv){
 
 	scene1();
 
-	raybuf = clCreateBuffer(ctx, CL_MEM_READ_WRITE, sizeof(Ray)*SCRW*SCRH, NULL, NULL);
-	if(!raybuf) die("couldn't make ray buffer\n");
-
 	scenebuf = clCreateBuffer(ctx, CL_MEM_COPY_HOST_PTR | CL_MEM_READ_WRITE, sizeof(Scene), &scene, NULL);
 	if(!scenebuf) die("couldn't make scene buffer\n");
-
-	clSetKernelArg(clgenrays, 0, sizeof(cl_mem), &raybuf);
-	clSetKernelArg(clintersect, 0, sizeof(cl_mem), &raybuf);
-	clSetKernelArg(clintersect, 1, sizeof(cl_mem), &scenebuf);
 
 	const cl_image_format fmt = {CL_RGBA, CL_UNORM_INT8};
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
-	clSetKernelArg(clfinal, 0, sizeof(cl_mem), &raybuf);
-	clSetKernelArg(clfinal, 1, sizeof(cl_mem), &clfb);
+	clSetKernelArg(clmain, 5, sizeof(cl_mem), &scenebuf);
+	clSetKernelArg(clmain, 6, sizeof(cl_mem), &clfb);
 
 	glutReshapeFunc(reshape);
 	glutDisplayFunc(step);
