@@ -129,6 +129,7 @@ initgl(int argc,char** argv){
 	glutInitWindowPosition(100, 100);
 	glutInitWindowSize(SCRW, SCRH);
 	winID = glutCreateWindow("Screen");
+	glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
 
 	if(glewInit() != GLEW_OK) die("couldn't init glew\n");
 
@@ -212,51 +213,47 @@ initcl(){
 	clGetDeviceInfo(devs[0], CL_DEVICE_EXTENSIONS, 1024, ext, NULL);
 	printf("extensions: %s\n", ext);
 
-	clprog = mkclprog("rtrt2.cl");
+	clprog = mkclprog("rtrt.cl");
 	clmain = clCreateKernel(clprog, "clmain", NULL);
 	if(!clmain) die("couldn't make kernel\n");
 }
 
 
 void
-keyboard(unsigned char key, int x, int y){
-	float angle = atan2(gaze[2] , gaze[0]);
-	float angle2 = atan2( sqrt(pow(gaze[0],2) + pow(gaze[2],2)) , gaze[1]);
-	float tempX = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI);
+keydown(unsigned char key, int x, int y){
 	switch(key){
-	case 27:
+	case 27: /* exit on ESC */
 		glutDestroyWindow(winID);
 		exit(0);
-		break;
+		break; 
 	case 'w':
-		speed += 0.1;
-		break;
-	case 's': // move backward
-		speed -= 0.1 ;
-		break;
-	case 'a': // turn left
-		yaw = -0.5f;
-		gaze[0] = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI);
-		gaze[2] = sqrt( pow(tempX,2) + pow(gaze[2] , 2) ) * sin(angle + yaw/180*M_PI);
-		break;
-	case 'd': // turn right
-		yaw = 0.5f;
-		gaze[0] = sqrt(pow(gaze[0],2) + pow(gaze[2] , 2)) * cos(angle + yaw/180*M_PI);
-		gaze[2] = sqrt(pow(tempX,2) + pow(gaze[2] , 2)) * sin(angle + yaw/180*M_PI);
-		break;
-	case 'q': // increase pitch
-		pitch = -1.0f;
-		gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2)) * cos(angle2 + pitch/180*M_PI);
-		break;
-	case 'e': // decrease pitch
-		pitch = 1.0f;				
-		gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2)) * cos(angle2 + pitch/180*M_PI);
-		break;
-	default:
-		break;
+		accz = 0.1; break;
+	case 's':
+		accz = -0.1; break;
+	case 'a':
+		accx = -0.1; break;
+	case 'd':
+		accx = 0.1; break;
+	default: break;
 	}
 }
 
+void
+keyup(unsigned char key, int x, int y){
+	switch(key){
+	case 27: /* exit on ESC */
+		glutDestroyWindow(winID);
+		exit(0);
+		break; 
+	case 'w':
+	case 's':
+		accz = 0; break;
+	case 'a':
+	case 'd':
+		accx = 0; break;
+	default: break;
+	}
+}
 
 void mouse(int button, int state, int x, int y)
 {
@@ -271,14 +268,18 @@ void
 step(){
 	float base = glutGet(GLUT_ELAPSED_TIME);
 
-	usleep(2000); /* limits to ~500 fps without vsync */
-
 	size_t gsize[2] = {SCRW, SCRH};
 
-	o[0] += gaze[0]*speed;
-	o[1] += gaze[1]*speed; 
-	o[2] += gaze[2]*speed;
-	speed *= 0.95;
+	speedx += accx;
+	speedz += accz;
+	o[0] += gaze[0]*speedz;
+	o[1] += gaze[1]*speedz; 
+	o[2] += gaze[2]*speedz;
+	o[0] += right[0]*speedx;
+	o[1] += right[1]*speedx; 
+	o[2] += right[2]*speedx;
+	speedx *= 0.95;
+	speedz *= 0.95;
 
 	clSetKernelArg(clmain, 0, 4*sizeof(float), o);
 	clSetKernelArg(clmain, 1, 4*sizeof(float), up);
@@ -338,7 +339,8 @@ main(int argc, char** argv){
 
 	glutReshapeFunc(reshape);
 	glutDisplayFunc(step);
-	glutKeyboardFunc(keyboard);
+	glutKeyboardFunc(keydown);
+	glutKeyboardUpFunc(keyup);
 	glutMouseFunc(mouse);
 	glutIdleFunc(glutPostRedisplay);
 	glutMainLoop();
