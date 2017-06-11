@@ -16,17 +16,6 @@
 #define SCRW 640
 #define SCRH 640
 
-typedef struct {
-	cl_float o[3];
-	cl_float d[3];
-	cl_float color[3];
-	cl_float hitpoint[3];
-	cl_float normal[3];
-	cl_float dist;
-	cl_int matl_idx;
-	cl_int hit;
-} __attribute__((__aligned__(16))) Ray;
-
 GLuint fbtex = 0;
 GLuint glprog = 0;
 GLuint fbtexloc;
@@ -233,54 +222,49 @@ void
 keyboard(unsigned char key, int x, int y){
 	float angle = atan2(gaze[2] , gaze[0]);
 	float angle2 = atan2( sqrt(pow(gaze[0],2) + pow(gaze[2],2)) , gaze[1]);
-	//float tempY = sqrt( pow(gaze[1],2) + pow(gaze[2] , 2) ) * cos(angle + pitch/180*M_PI) ;
-	float tempX = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI) ;
+	float tempX = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI);
 	switch(key){
-		case 27: // Escape key
-			glutDestroyWindow(winID);
-			exit (0);
-			break;
-		case 'w' : // move forward
-			speed += 0.1;
-			break;
-		case 's' : // move backward
-			speed -= 0.1 ;
-			break;
-		case 'a' : // turn left
-			yaw = -0.5f;
-			gaze[0] = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI) ;
-			gaze[2] = sqrt( pow(tempX,2) + pow(gaze[2] , 2) ) * sin(angle + yaw/180*M_PI) ;
-			break;
-		case 'd' : // turn right
-			yaw = 0.5f;
-			gaze[0] = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI) ;
-			gaze[2] = sqrt( pow(tempX,2) + pow(gaze[2] , 2) ) * sin(angle + yaw/180*M_PI) ;
-			break;
-		case 'q' : // increase pitch
-			pitch = -1.0f;
-			gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2) ) * cos(angle2 + pitch/180*M_PI) ;
-			break;
-		case 'e' : // decrease pitch
-			pitch = 1.0f;				
-			gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2) ) * cos(angle2 + pitch/180*M_PI) ;
-			break;
-		default:
-			break;
+	case 27:
+		glutDestroyWindow(winID);
+		exit(0);
+		break;
+	case 'w':
+		speed += 0.1;
+		break;
+	case 's': // move backward
+		speed -= 0.1 ;
+		break;
+	case 'a': // turn left
+		yaw = -0.5f;
+		gaze[0] = sqrt( pow(gaze[0],2) + pow(gaze[2] , 2) ) * cos(angle + yaw/180*M_PI);
+		gaze[2] = sqrt( pow(tempX,2) + pow(gaze[2] , 2) ) * sin(angle + yaw/180*M_PI);
+		break;
+	case 'd': // turn right
+		yaw = 0.5f;
+		gaze[0] = sqrt(pow(gaze[0],2) + pow(gaze[2] , 2)) * cos(angle + yaw/180*M_PI);
+		gaze[2] = sqrt(pow(tempX,2) + pow(gaze[2] , 2)) * sin(angle + yaw/180*M_PI);
+		break;
+	case 'q': // increase pitch
+		pitch = -1.0f;
+		gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2)) * cos(angle2 + pitch/180*M_PI);
+		break;
+	case 'e': // decrease pitch
+		pitch = 1.0f;				
+		gaze[1] = sqrt(pow(gaze[0],2)+ pow(gaze[1],2) + pow(gaze[2] , 2)) * cos(angle2 + pitch/180*M_PI);
+		break;
+	default:
+		break;
 	}
 }
 
 
 void mouse(int button, int state, int x, int y)
 {
-	// Wheel reports as button 3(scroll up) and button 4(scroll down)
-	if ((button == 3) || (button == 4)){ // It's a wheel event
-		// Each wheel event reports like a button click, GLUT_DOWN then GLUT_UP
-		if (state == GLUT_UP) return; // Disregard redundant GLUT_UP events
-		if(button==3) d += 0.1; //zoom in
-		else if(button==4) d -= 0.1; //zoom out
-	}/*else{  // normal button event
-		printf("Button %s At %d %d\n", (state == GLUT_DOWN) ? "Down" : "Up", x, y);
-	}*/
+	if ((button == 3) || (button == 4)){
+		if(state == GLUT_UP) return;
+		if(button == 3) d += 0.1; //zoom in
+		else if(button == 4) d -= 0.1;
+	}
 }
 
 void
@@ -289,17 +273,19 @@ step(){
 
 	usleep(2000); /* limits to ~500 fps without vsync */
 
-	size_t gsize[2] = {SCRW, SCRH}, lsize[2] = {1, 1};
+	size_t gsize[2] = {SCRW, SCRH};
 
 	o[0] += gaze[0]*speed;
 	o[1] += gaze[1]*speed; 
 	o[2] += gaze[2]*speed;
+	speed *= 0.95;
+
 	clSetKernelArg(clmain, 0, 4*sizeof(float), o);
 	clSetKernelArg(clmain, 1, 4*sizeof(float), up);
 	clSetKernelArg(clmain, 2, 4*sizeof(float), gaze);
 	clSetKernelArg(clmain, 3, 4*sizeof(float), right);
 	clSetKernelArg(clmain, 4, sizeof(float), &d);
-	clEnqueueNDRangeKernel(cqueue, clmain, 2, NULL, gsize, lsize, 0, NULL, NULL);
+	clEnqueueNDRangeKernel(cqueue, clmain, 2, NULL, gsize, NULL, 0, NULL, NULL);
 
 	const size_t origin[3] = {0, 0, 0};
 	const size_t region[3] = {SCRW, SCRH, 1};
