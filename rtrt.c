@@ -303,6 +303,7 @@ step(){
 	quat_mul_vec3(temp, rotate, right);
 	memcpy(right, temp, 3*sizeof(float));
 	vec3_mul_cross(gaze, up, right);
+
 	quat_rotate(rotate, angleh, right);
 	quat_mul_vec3(temp, rotate, up);
 	memcpy(up, temp, 3*sizeof(float));
@@ -364,8 +365,9 @@ main(int argc, char** argv){
 	clfb = clCreateImage2D(ctx, CL_MEM_READ_WRITE, &fmt, SCRW, SCRH, 0, NULL, NULL);
 	if(!clfb) die("couldn't make opencl framebuffer image\n");
 
-	clSetKernelArg(clmain, 5, sizeof(cl_mem), &scenebuf);
-	clSetKernelArg(clmain, 6, sizeof(cl_mem), &clfb);
+	clSetKernelArg(clmain, 5, 4*sizeof(float), nplane);
+	clSetKernelArg(clmain, 6, sizeof(cl_mem), &scenebuf);
+	clSetKernelArg(clmain, 7, sizeof(cl_mem), &clfb);
 
 	glutReshapeFunc(reshape);
 	glutDisplayFunc(step);

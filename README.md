@@ -11,9 +11,9 @@ roadmap:
 	- [x] scene file
 	- [x] interaction
 		- [ ] mouse grab
-	- [ ] reflective Blinn-Phong
+	- [x] reflective Blinn-Phong
 	- [ ] acceleration structure
-	- [ ] refractions: one reflective, one refractive pass over rays
+	- [x] refractions: one reflective, one refractive pass over rays
 	- [ ] refine until reasonable fps: >20 on hd4000, >60 on actual graphics cards.
 	- [ ] make roadmap for path tracer rtpt
 

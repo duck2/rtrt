@@ -12,8 +12,8 @@ die(char * f, ...){
 void
 v4_to_float3(void *out, v4 in){
 	*(float *)(out) = in.x;
-	*(float *)(out+4) = in.y;
-	*(float *)(out+8) = in.z;
+	*(float *)(out+sizeof(float)) = in.y;
+	*(float *)(out+2*sizeof(float)) = in.z;
 }
 
 /* read into a v4 from something like 1 1 1.
@@ -40,17 +40,21 @@ mkcam(XMLNode * node){
 		}else if(strcmp("Gaze", n->tag) == 0){
 			sreadv4(n->text, &tmp);
 			v4_to_float3(gaze, norv4(tmp));
+			vec3_norm(gaze, gaze);
 		}else if(strcmp("Up", n->tag) == 0){
 			sreadv4(n->text, &tmp);
 			v4_to_float3(up, norv4(tmp));
+			vec3_norm(up, up);
 		}else if(strcmp("NearDistance", n->tag) == 0){
 			sscanf(n->text, "%f", &d);
+		}else if(strcmp("NearPlane", n->tag) == 0){
+			sscanf(n->text, "%f %f %f %f", &nplane[0], &nplane[1], &nplane[2], &nplane[3]);
 		}
 	}
 	/* orthonormalize */
 	vec3_mul_cross(right, gaze, up);
-	vec3_mul_cross(up, right, gaze);
 	vec3_norm(right, right);
+	vec3_mul_cross(up, right, gaze);
 	vec3_norm(up, up);
 }
 

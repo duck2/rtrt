@@ -1,4 +1,4 @@
-#define EPSILON 0.0001f
+#define EPSILON 0.001f
 
 typedef struct {
 	float3 o;
@@ -87,8 +87,11 @@ sphxray(Obj *obj, Ray *ray, Hit *hit){
 	float d = b*b - c;
 	if(d<0) return 0;
 
-	if(!hit) return 1;
-	float t = hit->dist = -b - sqrt(d);
+	float t1 = -b + sqrt(d), t2 = -b - sqrt(d);
+	float t = fabs(t1) < fabs(t2) ? (t1 > 0 ? t1 : t2) : (t2 > 0 ? t2 : t1);
+	if(t<0) return 0;
+
+	hit->dist = t;
 	hit->point = ray->o + t*ray->d;
 	hit->normal = normalize(hit->point - sph.o);
 	hit->matl_idx = obj->matl_idx;
@@ -116,7 +119,6 @@ trglxray(Obj *obj, Ray *ray, Hit *hit){
 	float dist = dot(e2, q) * inv_det;
 	if(dist<0) return 0;
 
-	if(!hit) return 1;
 	hit->dist = dist;
 	hit->point = ray->o + dist*ray->d;
 	hit->normal = normalize(cross(e1, e2));
@@ -125,29 +127,30 @@ trglxray(Obj *obj, Ray *ray, Hit *hit){
 }
 
 int
-shadow(Ray *ray,  __global Scene *scene){
+shadow(Ray *ray, float maxd, __global Scene *scene){
+	Hit hit;
 	for(int i=0; i<scene->objc; i++){
 		Obj obj = scene->objs[i];
-		if(obj.type == O_SPH && sphxray(&obj, ray, NULL)) return 1;
-		else if(obj.type == O_TRGL && trglxray(&obj, ray, NULL)) return 1;
+		if(obj.type == O_SPH && sphxray(&obj, ray, &hit) && hit.dist < maxd) return 1;
+		else if(obj.type == O_TRGL && trglxray(&obj, ray, &hit) && hit.dist < maxd) return 1;
 	}
 	return 0;
 }
 
 float3
-shade(Ray *ray, Hit hit, __global Scene *scene){
+shade_phong(Ray *ray, Hit hit, Matl matl, __global Scene *scene){
 	float3 out = scene->amb;
-	Matl matl = scene->matls[hit.matl_idx];
 	for(int i=0; i<scene->lightc; i++){
 		Light light = scene->lights[i];
 		float3 L = light.o - hit.point;
+		float Ld = length(L);
 
 		Ray shray;
 		shray.o = hit.point + EPSILON*L;
 		shray.d = normalize(L);
-		if(shadow(&shray, scene)) continue;
+		if(shadow(&shray, Ld, scene)) continue;
 
-		float3 lum = (1/dot(L, L)) * light.lum;
+		float3 lum = (1/(Ld*Ld)) * light.lum;
 		float3 V = -1 * ray->d;
 		float3 H = normalize(L + V);
 		float3 N = hit.normal;
@@ -158,11 +161,65 @@ shade(Ray *ray, Hit hit, __global Scene *scene){
 	return (1 / 255.0f) * out;
 }
 
+/* conductor. bounce single ray */
+float3
+shade_mirror(Ray *ray, Rstack *stack, Hit hit, Matl matl, __global Scene *scene){
+	int depth = stack->depth[stack->top];
+	if(depth == DEPTH) return(float3)0;
+	float3 weight = stack->weight[stack->top];
+
+	Ray refl;
+	refl.d = ray->d - 2*dot(ray->d, hit.normal)*hit.normal;
+	refl.o = hit.point + EPSILON*refl.d;
+	Rstack_push(stack, &refl, depth+1, matl.mirror*weight);
+	return 0;
+}
+
+/* dielectric. bounce 2 rays, account for Beer's law if hit from inside. */
+float3
+shade_dielectric(Ray *ray, Rstack *stack, Hit hit, Matl matl, __global Scene *scene){
+	int depth = stack->depth[stack->top];
+	if(depth == DEPTH) return 0;
+	float3 weight = stack->weight[stack->top];
+
+	float3 beer = 1;
+	float3 I = ray->d, N = hit.normal;
+	float cosi = -dot(I, N);
+	float etai = 1, etat = matl.eta, eta = 1/matl.eta;
+	if(cosi < 0){
+		cosi *= -1;
+		eta = etai = matl.eta; etat = 1;
+		N *= -1;
+		beer = native_powr(matl.transp, hit.dist);
+	}
+
+	Ray refl;
+	refl.d = ray->d + 2*cosi*N;
+	refl.o = hit.point + EPSILON*refl.d;
+
+	float sin2phi = eta*eta*(1 - cosi*cosi);
+	if(sin2phi>1){
+		Rstack_push(stack, &refl, depth+1, beer*weight);
+		return 0;
+	}
+
+	float Ro = (etai - etat) / (etai + etat); Ro *= Ro;
+	float R = Ro + (1 - Ro) * native_powr(1-cosi, 5);
+
+	Ray refr;
+	refr.d = eta*I + (eta*cosi - sqrt(1-sin2phi))*N;
+	refr.o = hit.point + EPSILON*refr.d;
+	Rstack_push(stack, &refr, depth+1, (1-R)*beer*weight);
+	Rstack_push(stack, &refl, depth+1, R*beer*weight);
+	return 0;
+}
+
 float3
 trace(Ray *ray, Rstack *stack, __global Scene *scene){
 	int found = 0;
 	Hit hit, nhit;
 	hit.dist = 1e20;
+
 	for(int i=0; i<scene->objc; i++){
 		Obj obj = scene->objs[i];
 		if(obj.type == O_SPH){
@@ -177,8 +234,14 @@ trace(Ray *ray, Rstack *stack, __global Scene *scene){
 			}
 		}
 	}
-	if(found) return shade(ray, hit, scene);
-	else return (float3)(0, 0, 0);
+	if(!found) return (float3)0;
+
+	Matl matl = scene->matls[hit.matl_idx];
+	switch(matl.type){
+	case M_PHONG: return shade_phong(ray, hit, matl, scene);
+	case M_MIRROR: return shade_mirror(ray, stack, hit, matl, scene);
+	case M_DIELECTRIC: return shade_dielectric(ray, stack, hit, matl, scene);
+	}
 }
 
 float3
@@ -188,22 +251,25 @@ rectrace(Ray ray, __global Scene *scene){
 	Rstack_push(&stack, &ray, 0, (float3)1);
 
 	float3 out = (float3)(0, 0, 0);
-	while(stack.top){
+	while(stack.top > 0){
 		stack.top--;
-		out += stack.weight[stack.top] * trace(&ray, &stack, scene);
+		out += stack.weight[stack.top] * trace(&stack.r[stack.top], &stack, scene);
 	}
 	return out;
 }
 
 /* giant kernel. poor partitioning, lower memory traffic. */
 __kernel void
-clmain(float3 o, float3 up, float3 gaze, float3 right, float d, __global Scene *scene, __write_only image2d_t fb){
+clmain(float3 o, float3 up, float3 gaze, float3 right, float d, float4 nplane, __global Scene *scene, __write_only image2d_t fb){
 	int x = get_global_id(0), y = get_global_id(1);
 	int width = get_global_size(0), height = get_global_size(1);
 	int id = x + y*width;
+	
+	float plw = nplane.y - nplane.x;
+	float plh = nplane.w - nplane.z;
 	Ray ray;
 	ray.o = o;
-	ray.d = normalize(d*gaze - right - up + 2*right*(x/(float)width) + 2*up*(y/(float)height));
+	ray.d = normalize(d*gaze - 0.5f*plw*right - 0.5f*plh*up + plw*right*(x/(float)width) + plh*up*(y/(float)height));
 	float4 color = (float4)(rectrace(ray, scene), 1);
 	write_imagef(fb, (int2)(x, y), color);
 }

@@ -88,6 +88,7 @@ float o[3];
 float up[3];
 float gaze[3];
 float right[3];
+float nplane[4];
 float d;
 
 v4 vertices[VERTICES_MAX]; int vertexc;
